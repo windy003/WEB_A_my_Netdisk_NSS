@@ -1,0 +1,1 @@
+start  /b   ""  "D:\files\using\Web\WEB_A_my_Netdisk_NSS\.venv\Scripts\pythonw.exe"   "D:\files\using\Web\WEB_A_my_Netdisk_NSS\check_netdisk_sync_health.py"

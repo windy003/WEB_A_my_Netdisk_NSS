@@ -7,17 +7,45 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 
-# 配置日志
-log_dir = os.path.join(os.path.expanduser("~"), ".my_netdisk_sync", "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, f"my_netdisk_sync_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+class LineLimitedFileHandler(logging.Handler):
+    """固定文件名，最新的日志插在文件最前面，超过 max_lines 行时删除最后面（最旧）的记录"""
 
-# 配置日志
+    def __init__(self, filename, max_lines=300, encoding='utf-8'):
+        super().__init__()
+        self.baseFilename = os.path.abspath(filename)
+        self.max_lines = max_lines
+        self.encoding = encoding
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self.acquire()
+            try:
+                if os.path.exists(self.baseFilename):
+                    with open(self.baseFilename, 'r', encoding=self.encoding, errors='replace') as f:
+                        existing_lines = f.readlines()
+                else:
+                    existing_lines = []
+                new_lines = [msg + '\n'] + existing_lines
+                if len(new_lines) > self.max_lines:
+                    new_lines = new_lines[:self.max_lines]
+                with open(self.baseFilename, 'w', encoding=self.encoding) as f:
+                    f.writelines(new_lines)
+            finally:
+                self.release()
+        except Exception:
+            self.handleError(record)
+
+
+# 配置日志：固定写到脚本所在目录下的 my_netdisk_sync_to_gdrive.log，最多保留300行
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+log_file = os.path.join(BASE_DIR, "my_netdisk_sync_to_gdrive.log")
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_file),
+        LineLimitedFileHandler(log_file, max_lines=300),
         logging.StreamHandler()
     ]
 )
