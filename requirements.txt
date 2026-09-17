@@ -1,3 +1,7 @@
-Flask==3.0.0
-Werkzeug==3.0.1
-python-dotenv==1.0.0
+asgiref==3.12.1
+colorama==0.4.6
+cryptography==50.0.1
+importlib_metadata==9.0.1
+ipython==8.12.3
+typing_extensions==4.16.0
+watchdog==6.0.0
