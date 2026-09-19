@@ -258,6 +258,13 @@ def check_sync_health() -> bool:
 
     if synced:
         logging.info(f"同步检测正常，耗时 {elapsed} 秒，云端已检测到最新文件")
+        msg = (
+            f"本地变更已在 {elapsed} 秒内同步到云端，同步正常。\n"
+            f"本地目录: {source_path}\n"
+            f"云端目标: {destination_path}\n"
+            f"检测时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        send_alert_email("【正常】我的网盘同步检查通过", msg)
         return True
     else:
         msg = (

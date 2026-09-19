@@ -140,8 +140,12 @@ def sync_to_gdrive():
 
 class FileHandler(FileSystemEventHandler):
     def __init__(self):
-        self.last_sync_time = 0
-        self.sync_cooldown = 5  # 5秒冷却时间，防止目录变化时重复触发
+        self.debounce = 5  # 最后一次变化后等待5秒再同步（防抖）
+        self.grace = 3  # 同步结束后的忽略期，吸收 rclone 读取目录产生的事件
+        self.pending_since = None  # 最近一次有效变化的时间，None 表示无待同步变化
+        self.pending_path = None
+        self.syncing = False
+        self.ignore_until = 0
         # 忽略的文件后缀（临时文件等）
         self.ignored_extensions = {'.tmp', '.temp', '.swp', '.~', '.crdownload', '.part'}
 
@@ -153,18 +157,31 @@ class FileHandler(FileSystemEventHandler):
                 return True
         return False
 
-    def trigger_sync(self, event_path):
-        """触发同步操作"""
-        current_time = time.time()
-        if current_time - self.last_sync_time < self.sync_cooldown:
+    def mark_dirty(self, path):
+        """记录一次有效变化；同步期间和同步刚结束时产生的事件视为 rclone 自己造成的，直接丢弃"""
+        if self.syncing or time.time() < self.ignore_until:
             return
+        self.pending_since = time.time()
+        self.pending_path = path
 
-        self.last_sync_time = current_time
-        logging.info(f"检测到目录变化: {event_path}")
+    def run_pending_sync(self):
+        """由主线程周期性调用：变化静止 debounce 秒后执行一次同步"""
+        if self.pending_since is None:
+            return
+        if time.time() - self.pending_since < self.debounce:
+            return
+        path = self.pending_path
+        self.pending_since = None
+        self.syncing = True
+        logging.info(f"检测到目录变化: {path}")
         start_time = datetime.now()
-        result = sync_to_gdrive()
-        end_time = datetime.now()
-        duration = end_time - start_time
+        try:
+            result = sync_to_gdrive()
+        finally:
+            self.syncing = False
+            self.ignore_until = time.time() + self.grace
+            self.pending_since = None  # 丢弃同步期间可能残留的事件
+        duration = datetime.now() - start_time
 
         if result:
             logging.info(f"同步任务完成，耗时: {duration}")
@@ -172,32 +189,32 @@ class FileHandler(FileSystemEventHandler):
             logging.error(f"同步任务失败，耗时: {duration}")
 
     def on_modified(self, event):
-        """文件或目录被修改"""
-        if self.should_ignore(event.src_path):
+        """文件被修改（目录的 modified 事件只是访问时间/元数据变化，忽略）"""
+        if event.is_directory or self.should_ignore(event.src_path):
             return
         logging.debug(f"文件修改: {event.src_path}")
-        self.trigger_sync(event.src_path)
+        self.mark_dirty(event.src_path)
 
     def on_created(self, event):
         """文件或目录被创建"""
         if self.should_ignore(event.src_path):
             return
         logging.debug(f"文件创建: {event.src_path}")
-        self.trigger_sync(event.src_path)
+        self.mark_dirty(event.src_path)
 
     def on_deleted(self, event):
         """文件或目录被删除"""
         if self.should_ignore(event.src_path):
             return
         logging.debug(f"文件删除: {event.src_path}")
-        self.trigger_sync(event.src_path)
+        self.mark_dirty(event.src_path)
 
     def on_moved(self, event):
         """文件或目录被移动/重命名"""
         if self.should_ignore(event.src_path):
             return
         logging.debug(f"文件移动: {event.src_path} -> {event.dest_path}")
-        self.trigger_sync(event.dest_path)
+        self.mark_dirty(event.dest_path)
 
 def watch_directory():
     """监控整个目录树的变化"""
@@ -218,6 +235,7 @@ def watch_directory():
         # 保持程序运行
         while True:
             time.sleep(1)
+            event_handler.run_pending_sync()
     except KeyboardInterrupt:
         observer.stop()
         logging.info("监控停止")
