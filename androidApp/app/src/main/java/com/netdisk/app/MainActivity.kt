@@ -222,7 +222,7 @@ class MainActivity : AppCompatActivity() {
                 true
             }
             R.id.action_settings -> {
-                startActivity(Intent(this, SettingsActivity::class.java))
+                startActivityForResult(Intent(this, SettingsActivity::class.java), REQUEST_SETTINGS_UPDATE)
                 true
             }
             R.id.action_refresh -> {
@@ -302,6 +302,16 @@ class MainActivity : AppCompatActivity() {
                     finish()
                 }
             }
+            REQUEST_SETTINGS_UPDATE -> {
+                if (resultCode == RESULT_OK) {
+                    // 服务器地址已更新，重新加载WebView
+                    android.util.Log.d("MainActivity", "Settings updated, reloading server URL...")
+                    if (::webView.isInitialized) {
+                        restoreCookies()
+                        loadServerUrl()
+                    }
+                }
+            }
             else -> {
                 // Handle file chooser result
                 if (::webChromeClient.isInitialized) {
@@ -348,5 +358,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_INITIAL_SETUP = 1000
+        private const val REQUEST_SETTINGS_UPDATE = 1001
     }
 }
